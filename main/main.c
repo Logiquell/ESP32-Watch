@@ -2,10 +2,11 @@
  * ESP32-S3 AMOLED 2.06" watch — starter watch face.
  *
  * Shows a digital clock, date and a seconds ring on the 410x502 AMOLED.
- * Time starts from the firmware build time; NTP / RTC sync comes next.
+ * Time starts from the firmware build time, then syncs over Wi-Fi (NTP).
  */
 #define _XOPEN_SOURCE 700
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
@@ -14,9 +15,11 @@
 #include "lvgl.h"
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
+#include "wifi_time.h"
 
 static const char *TAG = "watch";
 
+static lv_obj_t *s_wifi_label;
 static lv_obj_t *s_time_label;
 static lv_obj_t *s_sec_label;
 static lv_obj_t *s_date_label;
@@ -52,6 +55,19 @@ static void clock_tick(lv_timer_t *timer)
     lv_label_set_text(s_date_label, date);
 
     lv_arc_set_value(s_sec_arc, tm.tm_sec);
+
+    /* Wi-Fi / time-sync status: grey = not set up, amber = working, green = synced, red = failed */
+    uint32_t color;
+    switch (wifi_time_state()) {
+    case WIFI_TIME_CONNECTING:
+    case WIFI_TIME_SYNCING: color = 0xFF9F0A; break;
+    case WIFI_TIME_SYNCED:  color = 0x30D158; break;
+    case WIFI_TIME_FAILED:  color = 0xFF453A; break;
+    case WIFI_TIME_IDLE:
+    case WIFI_TIME_NO_CONFIG:
+    default:                color = 0x48484A; break;
+    }
+    lv_obj_set_style_text_color(s_wifi_label, lv_color_hex(color), 0);
 }
 
 static void build_watch_face(void)
@@ -93,12 +109,20 @@ static void build_watch_face(void)
     lv_obj_set_style_text_color(s_date_label, lv_color_hex(0x8E8E93), 0);
     lv_obj_align(s_date_label, LV_ALIGN_TOP_MID, 0, 30);
 
+    /* Sync status icon */
+    s_wifi_label = lv_label_create(scr);
+    lv_label_set_text(s_wifi_label, LV_SYMBOL_WIFI);
+    lv_obj_set_style_text_font(s_wifi_label, &lv_font_montserrat_20, 0);
+    lv_obj_align(s_wifi_label, LV_ALIGN_BOTTOM_MID, 0, -30);
+
     clock_tick(NULL);
     lv_timer_create(clock_tick, 250, NULL);
 }
 
 void app_main(void)
 {
+    setenv("TZ", CONFIG_WATCH_TIMEZONE, 1);
+    tzset();
     seed_time_from_build();
 
     bsp_display_start();
@@ -108,4 +132,6 @@ void app_main(void)
     bsp_display_unlock();
 
     ESP_LOGI(TAG, "watch face running");
+
+    wifi_time_start();
 }

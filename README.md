@@ -27,10 +27,15 @@ From PowerShell, `. .\env.ps1` does the same, but only if script execution is al
 
 If the board doesn't appear as a COM port, or flashing fails, hold **BOOT**, tap **RESET**, then release **BOOT**.
 
+## Wi-Fi time sync
+
+Copy `main/wifi_secrets.example.h` to `main/wifi_secrets.h` and enter your 2.4 GHz network. That file is git-ignored. The watch syncs over NTP at boot and then every 6 hours, and keeps Wi-Fi off in between. The icon at the bottom shows the status: grey = idle / not set up, amber = syncing, green = synced, red = failed. To change the timezone (POSIX TZ string), NTP server or sync interval, run `idf.py menuconfig` and open **Watch**.
+
 ## Roadmap
 
 - [x] Digital watch face (time, date, seconds ring)
-- [ ] Wi-Fi + NTP time sync, saved to the PCF85063 RTC
+- [x] Wi-Fi + NTP time sync (radio off between syncs)
+- [ ] Save synced time to the PCF85063 RTC so it survives reboots without Wi-Fi
 - [ ] Battery % and charging status from the AXP2101
 - [ ] Screen dimming / sleep and wake on raise (QMI8658)
 - [ ] Swipe between screens (touch)

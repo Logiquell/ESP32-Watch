@@ -1,0 +1,25 @@
+menu "Watch"
+
+    config WATCH_TIMEZONE
+        string "Timezone (POSIX TZ string)"
+        default "UTC0"
+        help
+            POSIX TZ string used for local time, e.g.
+              UTC0                              (UTC / Iceland)
+              GMT0BST,M3.5.0/1,M10.5.0          (UK)
+              CET-1CEST,M3.5.0,M10.5.0/3        (Central Europe)
+              EST5EDT,M3.2.0,M11.1.0            (US Eastern)
+              PST8PDT,M3.2.0,M11.1.0            (US Pacific)
+
+    config WATCH_NTP_SERVER
+        string "NTP server"
+        default "pool.ntp.org"
+
+    config WATCH_RESYNC_HOURS
+        int "Hours between time syncs"
+        range 1 168
+        default 6
+        help
+            Wi-Fi is switched off between syncs to save battery.
+
+endmenu
