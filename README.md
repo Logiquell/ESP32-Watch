@@ -37,6 +37,8 @@ Copy `main/wifi_secrets.example.h` to `main/wifi_secrets.h` and enter your 2.4 G
 - [x] Wi-Fi + NTP time sync (radio off between syncs)
 - [ ] Save synced time to the PCF85063 RTC so it survives reboots without Wi-Fi
 - [x] Battery % and charging status from the AXP2101
-- [ ] Screen dimming / sleep and wake on raise (QMI8658)
+- [x] Screen sleep after 15 s idle; wake on tap or BOOT button (timeout/brightness in menuconfig → Watch)
+- [ ] Raise-to-wake (QMI8658)
+- [ ] CPU light sleep while the screen is off
 - [ ] Swipe between screens (touch)
 - [ ] Step counter

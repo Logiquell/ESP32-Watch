@@ -1,5 +1,15 @@
 menu "Watch"
 
+    config WATCH_SCREEN_TIMEOUT_S
+        int "Screen off after (seconds without touch)"
+        range 3 600
+        default 15
+
+    config WATCH_BRIGHTNESS
+        int "Screen brightness (%)"
+        range 5 100
+        default 80
+
     config WATCH_TIMEZONE
         string "Timezone (POSIX TZ string)"
         default "UTC0"

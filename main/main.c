@@ -12,11 +12,13 @@
 #include <sys/time.h>
 
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "lvgl.h"
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
 #include "wifi_time.h"
 #include "battery.h"
+#include "screen.h"
 
 static const char *TAG = "watch";
 
@@ -44,7 +46,9 @@ static void seed_time_from_build(void)
 /* Runs inside the LVGL task, so the display lock is already held. */
 static void clock_tick(lv_timer_t *timer)
 {
-    (void)timer;
+    if (timer && !screen_is_awake()) {
+        return; /* no redraws while dark: saves CPU and QSPI traffic */
+    }
     time_t now = time(NULL);
     struct tm tm;
     localtime_r(&now, &tm);
@@ -75,7 +79,9 @@ static void clock_tick(lv_timer_t *timer)
 /* Battery: icon + percentage. Green while charging, red when low. */
 static void battery_tick(lv_timer_t *timer)
 {
-    (void)timer;
+    if (timer && !screen_is_awake()) {
+        return;
+    }
     battery_info_t b = battery_read();
 
     if (!b.valid || !b.present || b.percent < 0) {
@@ -99,6 +105,13 @@ static void battery_tick(lv_timer_t *timer)
                    : b.percent <= 15      ? 0xFF453A   /* red */
                    :                        0xD1D1D6;  /* light grey */
     lv_obj_set_style_text_color(s_batt_label, lv_color_hex(color), 0);
+}
+
+/* Called by the screen module right before it lights up again. */
+static void on_screen_wake(void)
+{
+    clock_tick(NULL);
+    battery_tick(NULL);
 }
 
 static void build_watch_face(void)
@@ -164,7 +177,25 @@ void app_main(void)
     tzset();
     seed_time_from_build();
 
-    bsp_display_start(); /* also brings up the shared I2C bus */
+    /*
+     * Keep the LVGL draw buffer in internal DMA-capable RAM. The BSP default puts it in
+     * PSRAM, which forces the SPI driver to malloc a 16 KB DMA bounce buffer on every
+     * flush; once Wi-Fi fragments internal RAM that malloc fails ("spi transmit (queue)
+     * color failed") and parts of the screen are skipped.
+     */
+    bsp_display_cfg_t disp_cfg = {
+        .lvgl_port_cfg = ESP_LVGL_PORT_INIT_CONFIG(),
+        .buffer_size = BSP_LCD_DRAW_BUFF_SIZE,
+        .double_buffer = BSP_LCD_DRAW_BUFF_DOUBLE,
+        .flags = {
+            .buff_dma = true,
+            .buff_spiram = false,
+        },
+    };
+    bsp_display_start_with_config(&disp_cfg); /* also brings up the shared I2C bus */
+    ESP_LOGI(TAG, "internal DMA RAM: %u free, largest block %u",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
 
     if (battery_init() != ESP_OK) {
         ESP_LOGW(TAG, "battery monitor unavailable");
@@ -172,6 +203,7 @@ void app_main(void)
 
     bsp_display_lock(0);
     build_watch_face();
+    screen_init(on_screen_wake);
     bsp_display_unlock();
 
     ESP_LOGI(TAG, "watch face running");
