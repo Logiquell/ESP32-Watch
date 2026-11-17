@@ -10,6 +10,7 @@
 #include "esp_netif_sntp.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
+#include "rtc.h"
 
 #if __has_include("wifi_secrets.h")
 #include "wifi_secrets.h"
@@ -100,6 +101,11 @@ static void sync_task(void *arg)
             localtime_r((const time_t *)&s_last_sync, &tm);
             strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
             ESP_LOGI(TAG, "time synced: %s (%s)", buf, CONFIG_WATCH_TIMEZONE);
+            if (ext_rtc_write(s_last_sync) == ESP_OK) {
+                ESP_LOGI(TAG, "saved to RTC");
+            } else {
+                ESP_LOGW(TAG, "could not save time to RTC");
+            }
             vTaskDelay(pdMS_TO_TICKS(RESYNC_INTERVAL_MS));
         } else {
             s_state = WIFI_TIME_FAILED;

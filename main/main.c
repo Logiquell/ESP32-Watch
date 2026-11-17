@@ -2,7 +2,8 @@
  * ESP32-S3 AMOLED 2.06" watch — starter watch face.
  *
  * Shows a digital clock, date and a seconds ring on the 410x502 AMOLED.
- * Time starts from the firmware build time, then syncs over Wi-Fi (NTP).
+ * Time comes from the PCF85063 RTC at boot (or the build time if the RTC lost
+ * power), then syncs over Wi-Fi (NTP), which also updates the RTC.
  */
 #define _XOPEN_SOURCE 700
 #include <stdio.h>
@@ -19,6 +20,7 @@
 #include "wifi_time.h"
 #include "battery.h"
 #include "screen.h"
+#include "rtc.h"
 
 static const char *TAG = "watch";
 
@@ -41,6 +43,24 @@ static void seed_time_from_build(void)
     }
     struct timeval tv = {.tv_sec = mktime(&tm), .tv_usec = 0};
     settimeofday(&tv, NULL);
+}
+
+/* Set the system clock at boot: the RTC if it holds a valid time, else the build time. */
+static void seed_time(void)
+{
+    time_t t;
+    if (ext_rtc_init() == ESP_OK && ext_rtc_read(&t) == ESP_OK) {
+        struct timeval tv = {.tv_sec = t, .tv_usec = 0};
+        settimeofday(&tv, NULL);
+        struct tm tm;
+        char buf[32];
+        localtime_r(&t, &tm);
+        strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+        ESP_LOGI(TAG, "time from RTC: %s", buf);
+    } else {
+        seed_time_from_build();
+        ESP_LOGI(TAG, "RTC time not available, using build time until Wi-Fi sync");
+    }
 }
 
 /* Runs inside the LVGL task, so the display lock is already held. */
@@ -171,31 +191,43 @@ static void build_watch_face(void)
     lv_timer_create(battery_tick, 5000, NULL);
 }
 
+/*
+ * Give LVGL a draw buffer in internal DMA-capable RAM.
+ *
+ * The BSP hard-codes its draw buffer (410 x 100 px = 82 KB) with default caps, so it
+ * lands in PSRAM, which the SPI DMA can't read. The SPI driver then mallocs a DMA
+ * bounce buffer as big as each flush; full-height flushes need ~82 KB contiguous,
+ * which internal RAM often can't supply, giving "spi transmit (queue) color failed"
+ * and skipped screen regions. A 40-line internal DMA buffer is sent directly.
+ * (The BSP's PSRAM buffer stays allocated; it's unused and PSRAM is plentiful.)
+ */
+#define DRAW_BUF_LINES 40
+
+static void use_dma_draw_buffer(lv_display_t *disp)
+{
+    size_t bytes = BSP_LCD_H_RES * DRAW_BUF_LINES * sizeof(uint16_t); /* RGB565 */
+    void *buf = heap_caps_malloc(bytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (buf == NULL) {
+        ESP_LOGW(TAG, "no internal DMA RAM for draw buffer; keeping BSP's PSRAM buffer");
+        return;
+    }
+    bsp_display_lock(0); /* LVGL is idle while we hold the lock, so no flush is in flight */
+    lv_display_set_buffers(disp, buf, NULL, bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    bsp_display_unlock();
+    ESP_LOGI(TAG, "draw buffer: %u bytes internal DMA; DMA RAM left %u, largest block %u",
+             (unsigned)bytes,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+}
+
 void app_main(void)
 {
     setenv("TZ", CONFIG_WATCH_TIMEZONE, 1);
     tzset();
-    seed_time_from_build();
+    seed_time();
 
-    /*
-     * Keep the LVGL draw buffer in internal DMA-capable RAM. The BSP default puts it in
-     * PSRAM, which forces the SPI driver to malloc a 16 KB DMA bounce buffer on every
-     * flush; once Wi-Fi fragments internal RAM that malloc fails ("spi transmit (queue)
-     * color failed") and parts of the screen are skipped.
-     */
-    bsp_display_cfg_t disp_cfg = {
-        .lvgl_port_cfg = ESP_LVGL_PORT_INIT_CONFIG(),
-        .buffer_size = BSP_LCD_DRAW_BUFF_SIZE,
-        .double_buffer = BSP_LCD_DRAW_BUFF_DOUBLE,
-        .flags = {
-            .buff_dma = true,
-            .buff_spiram = false,
-        },
-    };
-    bsp_display_start_with_config(&disp_cfg); /* also brings up the shared I2C bus */
-    ESP_LOGI(TAG, "internal DMA RAM: %u free, largest block %u",
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
-             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+    lv_display_t *disp = bsp_display_start(); /* also brings up the shared I2C bus */
+    use_dma_draw_buffer(disp);
 
     if (battery_init() != ESP_OK) {
         ESP_LOGW(TAG, "battery monitor unavailable");
