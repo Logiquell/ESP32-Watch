@@ -36,7 +36,7 @@ Copy `main/wifi_secrets.example.h` to `main/wifi_secrets.h` and enter your 2.4 G
 - [x] Digital watch face (time, date, seconds ring)
 - [x] Wi-Fi + NTP time sync (radio off between syncs)
 - [ ] Save synced time to the PCF85063 RTC so it survives reboots without Wi-Fi
-- [ ] Battery % and charging status from the AXP2101
+- [x] Battery % and charging status from the AXP2101
 - [ ] Screen dimming / sleep and wake on raise (QMI8658)
 - [ ] Swipe between screens (touch)
 - [ ] Step counter

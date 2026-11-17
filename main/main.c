@@ -16,10 +16,12 @@
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
 #include "wifi_time.h"
+#include "battery.h"
 
 static const char *TAG = "watch";
 
 static lv_obj_t *s_wifi_label;
+static lv_obj_t *s_batt_label;
 static lv_obj_t *s_time_label;
 static lv_obj_t *s_sec_label;
 static lv_obj_t *s_date_label;
@@ -70,6 +72,35 @@ static void clock_tick(lv_timer_t *timer)
     lv_obj_set_style_text_color(s_wifi_label, lv_color_hex(color), 0);
 }
 
+/* Battery: icon + percentage. Green while charging, red when low. */
+static void battery_tick(lv_timer_t *timer)
+{
+    (void)timer;
+    battery_info_t b = battery_read();
+
+    if (!b.valid || !b.present || b.percent < 0) {
+        lv_label_set_text(s_batt_label, b.usb_power ? LV_SYMBOL_USB : "");
+        lv_obj_set_style_text_color(s_batt_label, lv_color_hex(0x8E8E93), 0);
+        return;
+    }
+
+    const char *icon = b.percent > 80 ? LV_SYMBOL_BATTERY_FULL
+                     : b.percent > 55 ? LV_SYMBOL_BATTERY_3
+                     : b.percent > 30 ? LV_SYMBOL_BATTERY_2
+                     : b.percent > 10 ? LV_SYMBOL_BATTERY_1
+                     :                  LV_SYMBOL_BATTERY_EMPTY;
+    if (b.charging) {
+        lv_label_set_text_fmt(s_batt_label, LV_SYMBOL_CHARGE " %s %d%%", icon, b.percent);
+    } else {
+        lv_label_set_text_fmt(s_batt_label, "%s %d%%", icon, b.percent);
+    }
+
+    uint32_t color = b.charging || b.full ? 0x30D158   /* green */
+                   : b.percent <= 15      ? 0xFF453A   /* red */
+                   :                        0xD1D1D6;  /* light grey */
+    lv_obj_set_style_text_color(s_batt_label, lv_color_hex(color), 0);
+}
+
 static void build_watch_face(void)
 {
     lv_obj_t *scr = lv_screen_active();
@@ -113,10 +144,18 @@ static void build_watch_face(void)
     s_wifi_label = lv_label_create(scr);
     lv_label_set_text(s_wifi_label, LV_SYMBOL_WIFI);
     lv_obj_set_style_text_font(s_wifi_label, &lv_font_montserrat_20, 0);
-    lv_obj_align(s_wifi_label, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_align(s_wifi_label, LV_ALIGN_BOTTOM_MID, -60, -30);
+
+    /* Battery, beside the Wi-Fi icon */
+    s_batt_label = lv_label_create(scr);
+    lv_label_set_text(s_batt_label, "");
+    lv_obj_set_style_text_font(s_batt_label, &lv_font_montserrat_20, 0);
+    lv_obj_align(s_batt_label, LV_ALIGN_BOTTOM_MID, 25, -30);
 
     clock_tick(NULL);
     lv_timer_create(clock_tick, 250, NULL);
+    battery_tick(NULL);
+    lv_timer_create(battery_tick, 5000, NULL);
 }
 
 void app_main(void)
@@ -125,7 +164,11 @@ void app_main(void)
     tzset();
     seed_time_from_build();
 
-    bsp_display_start();
+    bsp_display_start(); /* also brings up the shared I2C bus */
+
+    if (battery_init() != ESP_OK) {
+        ESP_LOGW(TAG, "battery monitor unavailable");
+    }
 
     bsp_display_lock(0);
     build_watch_face();
