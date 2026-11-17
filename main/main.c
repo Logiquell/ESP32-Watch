@@ -1,0 +1,111 @@
+/*
+ * ESP32-S3 AMOLED 2.06" watch — starter watch face.
+ *
+ * Shows a digital clock, date and a seconds ring on the 410x502 AMOLED.
+ * Time starts from the firmware build time; NTP / RTC sync comes next.
+ */
+#define _XOPEN_SOURCE 700
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include <sys/time.h>
+
+#include "esp_log.h"
+#include "lvgl.h"
+#include "bsp/esp-bsp.h"
+#include "bsp/display.h"
+
+static const char *TAG = "watch";
+
+static lv_obj_t *s_time_label;
+static lv_obj_t *s_sec_label;
+static lv_obj_t *s_date_label;
+static lv_obj_t *s_sec_arc;
+
+/* Seed the system clock from the compile timestamp so the face shows something sensible. */
+static void seed_time_from_build(void)
+{
+    struct tm tm = {0};
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%s %s", __DATE__, __TIME__); /* "Nov 17 2026 14:03:22" */
+    if (strptime(buf, "%b %d %Y %H:%M:%S", &tm) == NULL) {
+        ESP_LOGW(TAG, "could not parse build time '%s'", buf);
+        return;
+    }
+    struct timeval tv = {.tv_sec = mktime(&tm), .tv_usec = 0};
+    settimeofday(&tv, NULL);
+}
+
+/* Runs inside the LVGL task, so the display lock is already held. */
+static void clock_tick(lv_timer_t *timer)
+{
+    (void)timer;
+    time_t now = time(NULL);
+    struct tm tm;
+    localtime_r(&now, &tm);
+
+    lv_label_set_text_fmt(s_time_label, "%02d:%02d", tm.tm_hour, tm.tm_min);
+    lv_label_set_text_fmt(s_sec_label, "%02d", tm.tm_sec);
+
+    char date[40];
+    strftime(date, sizeof(date), "%A, %d %B", &tm);
+    lv_label_set_text(s_date_label, date);
+
+    lv_arc_set_value(s_sec_arc, tm.tm_sec);
+}
+
+static void build_watch_face(void)
+{
+    lv_obj_t *scr = lv_screen_active();
+    /* Pure black = pixels off on AMOLED: looks best and saves battery. */
+    lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+
+    /* Seconds ring */
+    s_sec_arc = lv_arc_create(scr);
+    lv_obj_set_size(s_sec_arc, 360, 360);
+    lv_obj_center(s_sec_arc);
+    lv_arc_set_rotation(s_sec_arc, 270);
+    lv_arc_set_bg_angles(s_sec_arc, 0, 360);
+    lv_arc_set_range(s_sec_arc, 0, 59);
+    lv_obj_remove_style(s_sec_arc, NULL, LV_PART_KNOB);
+    lv_obj_remove_flag(s_sec_arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_width(s_sec_arc, 10, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(s_sec_arc, lv_color_hex(0x1C1C1E), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(s_sec_arc, 10, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(s_sec_arc, lv_color_hex(0x30D158), LV_PART_INDICATOR);
+
+    /* HH:MM */
+    s_time_label = lv_label_create(scr);
+    lv_obj_set_style_text_font(s_time_label, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(s_time_label, lv_color_white(), 0);
+    lv_obj_align(s_time_label, LV_ALIGN_CENTER, 0, -10);
+
+    /* Seconds */
+    s_sec_label = lv_label_create(scr);
+    lv_obj_set_style_text_font(s_sec_label, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(s_sec_label, lv_color_hex(0x30D158), 0);
+    lv_obj_align(s_sec_label, LV_ALIGN_CENTER, 0, 45);
+
+    /* Date */
+    s_date_label = lv_label_create(scr);
+    lv_obj_set_style_text_font(s_date_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(s_date_label, lv_color_hex(0x8E8E93), 0);
+    lv_obj_align(s_date_label, LV_ALIGN_TOP_MID, 0, 30);
+
+    clock_tick(NULL);
+    lv_timer_create(clock_tick, 250, NULL);
+}
+
+void app_main(void)
+{
+    seed_time_from_build();
+
+    bsp_display_start();
+
+    bsp_display_lock(0);
+    build_watch_face();
+    bsp_display_unlock();
+
+    ESP_LOGI(TAG, "watch face running");
+}
