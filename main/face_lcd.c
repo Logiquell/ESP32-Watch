@@ -6,8 +6,8 @@
 /* ---- Palette -------------------------------------------------------------------- */
 #define COL_BEZEL     0x000000  /* pure black: AMOLED pixels off */
 #define COL_BEZEL_TXT 0x6E6E6E
-#define COL_PANEL     0x3F8A45  /* green backlit LCD glass (dimmer than bare grey LCD) */
-#define COL_PANEL_EDGE 0x1A3A1D
+#define COL_PANEL     0x2F6E37  /* green backlit LCD glass, dark tone */
+#define COL_PANEL_EDGE 0x153019
 #define COL_SEG       0x07130A  /* lit segment: near-black green */
 #define GHOST_OPA     LV_OPA_20 /* unlit segments still faintly visible, like a real LCD */
 
@@ -66,7 +66,7 @@ static const uint8_t DIGIT_MASK[10] = {
 
 static void digit_create(digit_t *d, lv_obj_t *parent, int x, int y, int w, int h, int t)
 {
-    const int gap = t / 4 + 1;          /* gap between segment ends, like real LCD glass */
+    const int gap = t / 10 + 1;         /* hairline gap between segment ends, like real LCD glass */
     const int vl = (h - 3 * t) / 2;     /* vertical segment length */
     const int hl = w - 2 * t;           /* horizontal segment length */
     const struct { int x, y, w, h; } r[7] = {
@@ -83,7 +83,7 @@ static void digit_create(digit_t *d, lv_obj_t *parent, int x, int y, int w, int 
         seg_style(s);
         lv_obj_set_pos(s, x + r[i].x, y + r[i].y);
         lv_obj_set_size(s, r[i].w, r[i].h);
-        lv_obj_set_style_radius(s, t / 2, 0);
+        lv_obj_set_style_radius(s, t / 5, 0); /* nearly square ends so corners join up */
         d->seg[i] = s;
     }
     d->value = -1;
@@ -179,7 +179,7 @@ void face_create(void)
     digit_create(&s_ss[1], p, PANEL_W - 24 - sw, 24, sw, sh, st);
 
     /* Row 2: big HH:MM */
-    const int bw = 66, bh = 130, bt = 14, gap = 10, colon_w = 26;
+    const int bw = 66, bh = 130, bt = 16, gap = 10, colon_w = 26;
     const int total = 4 * bw + 2 * gap + colon_w + 2 * gap;
     int bx = (PANEL_W - total) / 2;
     const int by = 112;
