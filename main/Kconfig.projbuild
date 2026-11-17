@@ -3,7 +3,7 @@ menu "Watch"
     config WATCH_SCREEN_TIMEOUT_S
         int "Screen off after (seconds without touch)"
         range 3 600
-        default 15
+        default 30
 
     config WATCH_BRIGHTNESS
         int "Screen brightness (%)"

@@ -6,10 +6,10 @@
 /* ---- Palette -------------------------------------------------------------------- */
 #define COL_BEZEL     0x000000  /* pure black: AMOLED pixels off */
 #define COL_BEZEL_TXT 0x6E6E6E
-#define COL_PANEL     0xA9B38F  /* grey-green LCD glass */
-#define COL_PANEL_EDGE 0x2A2D24
-#define COL_SEG       0x1B2015  /* lit segment: near-black olive */
-#define GHOST_OPA     LV_OPA_10 /* unlit segments still faintly visible, like a real LCD */
+#define COL_PANEL     0x3F8A45  /* green backlit LCD glass (dimmer than bare grey LCD) */
+#define COL_PANEL_EDGE 0x1A3A1D
+#define COL_SEG       0x07130A  /* lit segment: near-black green */
+#define GHOST_OPA     LV_OPA_20 /* unlit segments still faintly visible, like a real LCD */
 
 /* ---- Layout (screen 410 x 502) --------------------------------------------------- */
 #define PANEL_W 372
