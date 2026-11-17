@@ -13,13 +13,17 @@ Custom firmware for the **Waveshare ESP32-S3-Touch-AMOLED-2.06** watch board, bu
 
 Waveshare's board support package (`waveshare/esp32_s3_touch_amoled_2_06`) sets up the display, touch and LVGL. It's pulled from the Espressif component registry on the first build.
 
-## Build & flash (Windows, PowerShell)
+## Build & flash (Windows)
 
-```powershell
-. .\env.ps1                    # load ESP-IDF v5.4
+Easiest: open a **cmd** shell in the project folder.
+
+```bat
+env.bat                        & rem load ESP-IDF v5.4
 idf.py build
-idf.py -p COM5 flash monitor   # use your board's COM port; Ctrl+] exits the monitor
+idf.py -p COM5 flash monitor   & rem use your board's COM port; Ctrl+] exits the monitor
 ```
+
+From PowerShell, `. .\env.ps1` does the same, but only if script execution is allowed. Windows blocks it by default; run `cmd` first and use `env.bat` instead.
 
 If the board doesn't appear as a COM port, or flashing fails, hold **BOOT**, tap **RESET**, then release **BOOT**.
 
