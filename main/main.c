@@ -16,6 +16,8 @@
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
+#include "esp_attr.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl.h"
@@ -28,6 +30,16 @@
 #include "face_lcd.h"
 
 static const char *TAG = "watch";
+
+/*
+ * Restart diagnostics that survive resets (but not a full power-on): counts restarts and
+ * remembers why the last one happened. Printed every 30 s, so after testing on battery you
+ * can plug in USB and read what happened while it was unplugged.
+ */
+#define DIAG_MAGIC 0x57A7C4D5
+static RTC_NOINIT_ATTR uint32_t s_diag_magic;
+static RTC_NOINIT_ATTR uint32_t s_diag_restarts;
+static RTC_NOINIT_ATTR uint32_t s_diag_last_reason;
 
 static battery_info_t s_battery = {.percent = -1};
 static int s_critical_count;     /* consecutive critical readings */
@@ -94,8 +106,16 @@ static void power_off_cb(lv_timer_t *timer)
  * (one reading can dip while the screen wakes). Running the battery flat instead makes
  * the chip brown out and reset every time the screen tries to wake.
  */
+static const char *reset_reason_name(esp_reset_reason_t r);
+
 static void battery_tick(lv_timer_t *timer)
 {
+    static int ticks;
+    if (++ticks % 6 == 0) { /* every 30 s */
+        ESP_LOGI(TAG, "diag: restarts since power-on=%lu, last restart=%s, uptime=%llds",
+                 (unsigned long)s_diag_restarts, reset_reason_name((esp_reset_reason_t)s_diag_last_reason),
+                 esp_timer_get_time() / 1000000);
+    }
     if (s_shutting_down) {
         return;
     }
@@ -140,7 +160,16 @@ static void on_screen_wake(void)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "reset reason: %s", reset_reason_name(esp_reset_reason()));
+    esp_reset_reason_t reason = esp_reset_reason();
+    if (reason == ESP_RST_POWERON || s_diag_magic != DIAG_MAGIC) {
+        s_diag_magic = DIAG_MAGIC;
+        s_diag_restarts = 0;
+    } else {
+        s_diag_restarts++;
+    }
+    s_diag_last_reason = reason;
+    ESP_LOGI(TAG, "reset reason: %s (restarts since power-on: %lu)", reset_reason_name(reason),
+             (unsigned long)s_diag_restarts);
 
     /* Check the battery before lighting the display: on a nearly flat battery, switch
        straight off instead of browning out in a reset loop. */

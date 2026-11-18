@@ -25,6 +25,10 @@ CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
 # Note: tickless idle forces PM_SLP_DISABLE_GPIO on ESP32-S3 (chip errata workaround);
 # screen.c exempts the LCD/touch control pins with gpio_sleep_sel_dis().
 
+# Save a crash dump to flash (read with: idf.py coredump-info)
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+
 # Display: smaller LVGL draw buffer so each SPI flush's DMA copy (internal RAM) always fits
 CONFIG_BSP_DISPLAY_LVGL_BUF_HEIGHT=20
 

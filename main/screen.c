@@ -159,10 +159,13 @@ static void pm_init(void)
     }
     /*
      * Tickless idle on ESP32-S3 isolates all GPIOs during light sleep (errata workaround).
-     * Keep the display/touch control outputs driven, so the panel isn't reset or clocked
-     * by a floating line while we sleep. (Data lines and inputs can safely be isolated.)
+     * Keep these connected:
+     *  - display/touch control outputs, so the panel isn't reset or clocked by a floating line
+     *  - touch interrupt (driven by the touch chip) and the shared I2C bus, so sleep entry/exit
+     *    can't create false touch-interrupt edges or glitch an I2C transfer
      */
-    const gpio_num_t keep[] = {BSP_LCD_RST, BSP_LCD_TOUCH_RST, BSP_LCD_PCLK, BSP_LCD_CS};
+    const gpio_num_t keep[] = {BSP_LCD_RST, BSP_LCD_TOUCH_RST, BSP_LCD_PCLK, BSP_LCD_CS,
+                               BSP_LCD_TOUCH_INT, BSP_I2C_SDA, BSP_I2C_SCL};
     for (size_t i = 0; i < sizeof(keep) / sizeof(keep[0]); i++) {
         gpio_sleep_sel_dis(keep[i]);
     }
