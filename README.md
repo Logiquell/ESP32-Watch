@@ -39,6 +39,8 @@ Copy `main/wifi_secrets.example.h` to `main/wifi_secrets.h` and enter your 2.4 G
 - [x] Battery % and charging status from the AXP2101
 - [x] Screen sleep after 30 s idle; wake on tap or BOOT button (timeout/brightness in menuconfig → Watch)
 - [ ] Raise-to-wake (QMI8658)
-- [ ] CPU light sleep while the screen is off
+- [x] CPU light sleep while the screen is off (40 MHz + auto light sleep; off while USB connected)
+- [x] Low-battery shutdown (shows LO, then AXP2101 power-off)
+- [ ] Measure real battery life with light sleep
 - [ ] Swipe between screens (touch)
 - [ ] Step counter
