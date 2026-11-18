@@ -1,5 +1,15 @@
 menu "Watch"
 
+    choice WATCH_FACE
+        prompt "Watch face"
+        default WATCH_FACE_FLIP
+
+        config WATCH_FACE_FLIP
+            bool "Vintage flip clock (radium glow)"
+        config WATCH_FACE_LCD
+            bool "80s digital LCD"
+    endchoice
+
     config WATCH_SCREEN_TIMEOUT_S
         int "Screen off after (seconds without touch)"
         range 3 600

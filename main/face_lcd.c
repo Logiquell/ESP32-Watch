@@ -1,7 +1,12 @@
-#include "face_lcd.h"
+#include "sdkconfig.h"
+#if CONFIG_WATCH_FACE_LCD
+
+#include "face.h"
 
 #include <stdio.h>
 #include "lvgl.h"
+
+void face_skip_animation(void) {} /* nothing animates on this face */
 
 /* ---- Palette -------------------------------------------------------------------- */
 #define COL_BEZEL     0x000000  /* pure black: AMOLED pixels off */
@@ -270,3 +275,5 @@ void face_set_sync(wifi_time_state_t state, bool blink)
     set_text_lit(s_lbl_sync, state == WIFI_TIME_SYNCED || (busy && blink));
     set_text_lit(s_lbl_err, state == WIFI_TIME_FAILED);
 }
+
+#endif /* CONFIG_WATCH_FACE_LCD */

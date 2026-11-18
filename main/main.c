@@ -1,8 +1,8 @@
 /*
  * ESP32-S3 AMOLED 2.06" watch.
  *
- * 80s digital-LCD watch face (face_lcd.c): time, seconds, date, weekday, battery
- * bars and sync status.
+ * Watch face picked in menuconfig: vintage flip clock (face_flip.c, default) or
+ * 80s digital LCD (face_lcd.c).
  * Time comes from the PCF85063 RTC at boot (or the build time if the RTC lost
  * power), then syncs over Wi-Fi (NTP), which also updates the RTC.
  */
@@ -27,7 +27,7 @@
 #include "battery.h"
 #include "screen.h"
 #include "rtc.h"
-#include "face_lcd.h"
+#include "face.h"
 
 static const char *TAG = "watch";
 
@@ -154,6 +154,7 @@ static const char *reset_reason_name(esp_reset_reason_t r)
 /* Called by the screen module right before it lights up again. */
 static void on_screen_wake(void)
 {
+    face_skip_animation(); /* jump straight to the current time, no flip while lighting up */
     battery_tick(NULL);
     face_tick(NULL);
 }

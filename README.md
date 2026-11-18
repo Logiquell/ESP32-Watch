@@ -31,6 +31,13 @@ If the board doesn't appear as a COM port, or flashing fails, hold **BOOT**, tap
 
 Copy `main/wifi_secrets.example.h` to `main/wifi_secrets.h` and enter your 2.4 GHz network. That file is git-ignored. The watch syncs over NTP at boot and then every 6 hours, and keeps Wi-Fi off in between. The icon at the bottom shows the status: grey = idle / not set up, amber = syncing, green = synced, red = failed. To change the timezone (POSIX TZ string), NTP server or sync interval, run `idf.py menuconfig` and open **Watch**.
 
+## Watch faces
+
+Choose one with `idf.py menuconfig` → **Watch → Watch face**:
+
+- **Vintage flip clock** (default, `main/face_flip.c`): split-flap HH/MM cards that flip when the time changes, with pale radium-green numerals and a soft glow. The font is Ubuntu Medium TTF, embedded from the LVGL package.
+- **80s digital LCD** (`main/face_lcd.c`): seven-segment digits with faint unlit segments on a green backlit panel.
+
 ## Roadmap
 
 - [x] Digital watch face (time, date, seconds ring)
