@@ -17,6 +17,14 @@ CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 CONFIG_FREERTOS_HZ=1000
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
+# Power: light sleep while the screen is off (screen.c holds PM locks while it's on).
+# While USB is connected, stay out of light sleep so serial logs and flashing keep working.
+CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
+# Note: tickless idle forces PM_SLP_DISABLE_GPIO on ESP32-S3 (chip errata workaround);
+# screen.c exempts the LCD/touch control pins with gpio_sleep_sel_dis().
+
 # Display: smaller LVGL draw buffer so each SPI flush's DMA copy (internal RAM) always fits
 CONFIG_BSP_DISPLAY_LVGL_BUF_HEIGHT=20
 

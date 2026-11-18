@@ -14,6 +14,7 @@ static const char *TAG = "battery";
 #define AXP2101_ADDR        0x34
 #define REG_STATUS1         0x00  /* bit5 VBUS good, bit3 battery present */
 #define REG_STATUS2         0x01  /* bits6:5 current dir (01 = charging), bits2:0 charge state (4 = done) */
+#define REG_COMMON_CFG      0x10  /* bit0 = soft power-off */
 #define REG_GAUGE_CTRL      0x18  /* bit3 fuel gauge enable */
 #define REG_ADC_CTRL        0x30  /* bit0 battery voltage ADC enable */
 #define REG_VBAT_H          0x34  /* bits5:0 = VBAT[13:8], in mV */
@@ -90,4 +91,24 @@ battery_info_t battery_read(void)
     b.millivolts = ((vbat[0] & 0x3F) << 8) | vbat[1];
     b.percent    = (b.present && pct <= 100) ? pct : -1;
     return b;
+}
+
+#define CRITICAL_PERCENT    3
+#define CRITICAL_MV         3350
+
+bool battery_is_critical(const battery_info_t *b)
+{
+    if (!b->valid || !b->present || b->usb_power || b->charging) {
+        return false;
+    }
+    return (b->percent >= 0 && b->percent <= CRITICAL_PERCENT) ||
+           (b->millivolts > 0 && b->millivolts < CRITICAL_MV);
+}
+
+void battery_power_off(void)
+{
+    ESP_LOGW(TAG, "battery critical: powering off");
+    if (s_dev) {
+        reg_set_bits(REG_COMMON_CFG, 1 << 0);
+    }
 }

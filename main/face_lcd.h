@@ -21,3 +21,6 @@ void face_set_battery(const battery_info_t *b, bool blink);
 
 /* blink: shared blink phase, used while syncing. */
 void face_set_sync(wifi_time_state_t state, bool blink);
+
+/* Show "LO" in the big digits (critical battery, about to power off). */
+void face_show_low_battery(void);

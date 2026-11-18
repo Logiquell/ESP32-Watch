@@ -251,6 +251,19 @@ void face_set_battery(const battery_info_t *b, bool blink)
     set_text_lit(s_lbl_chg, b->valid && b->charging);
 }
 
+void face_show_low_battery(void)
+{
+    digit_show_mask(&s_hh[0], 100, 0x38); /* L = d e f */
+    digit_show_mask(&s_hh[1], 101, 0x3F); /* O */
+    digit_show_mask(&s_mm[0], 102, 0);
+    digit_show_mask(&s_mm[1], 102, 0);
+    set_lit(s_colon[0], false);
+    set_lit(s_colon[1], false);
+    for (int i = 0; i < 4; i++) {
+        set_lit(s_bat_bar[i], false);
+    }
+}
+
 void face_set_sync(wifi_time_state_t state, bool blink)
 {
     bool busy = state == WIFI_TIME_CONNECTING || state == WIFI_TIME_SYNCING;

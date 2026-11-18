@@ -15,6 +15,9 @@
 
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "lvgl.h"
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
@@ -27,6 +30,8 @@
 static const char *TAG = "watch";
 
 static battery_info_t s_battery = {.percent = -1};
+static int s_critical_count;     /* consecutive critical readings */
+static bool s_shutting_down;
 
 /* Seed the system clock from the compile timestamp so the face shows something sensible. */
 static void seed_time_from_build(void)
@@ -63,7 +68,7 @@ static void seed_time(void)
 /* Runs inside the LVGL task every 250 ms, so the display lock is already held. */
 static void face_tick(lv_timer_t *timer)
 {
-    if (timer && !screen_is_awake()) {
+    if (s_shutting_down || (timer && !screen_is_awake())) {
         return; /* no redraws while dark: saves CPU and QSPI traffic */
     }
     struct timeval tv;
@@ -77,13 +82,53 @@ static void face_tick(lv_timer_t *timer)
     face_set_battery(&s_battery, first_half);
 }
 
-/* Every 5 s: read the PMU (I2C) into the cache the face draws from. */
+static void power_off_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    battery_power_off();
+}
+
+/*
+ * Every 5 s, screen on or off: read the PMU (I2C) into the cache the face draws from,
+ * and switch the watch off cleanly if the battery is critical on two readings in a row
+ * (one reading can dip while the screen wakes). Running the battery flat instead makes
+ * the chip brown out and reset every time the screen tries to wake.
+ */
 static void battery_tick(lv_timer_t *timer)
 {
-    if (timer && !screen_is_awake()) {
+    if (s_shutting_down) {
         return;
     }
     s_battery = battery_read();
+    s_critical_count = battery_is_critical(&s_battery) ? s_critical_count + 1 : 0;
+    if (s_critical_count < 2) {
+        return;
+    }
+    s_shutting_down = true;
+    ESP_LOGW(TAG, "battery critical (%d%%, %u mV)", s_battery.percent, s_battery.millivolts);
+    if (screen_is_awake()) {
+        face_show_low_battery();
+        lv_timer_t *t = lv_timer_create(power_off_cb, 2000, NULL); /* let "LO" show briefly */
+        lv_timer_set_repeat_count(t, 1);
+    } else {
+        battery_power_off(); /* don't light the screen on a nearly empty battery */
+    }
+}
+
+static const char *reset_reason_name(esp_reset_reason_t r)
+{
+    switch (r) {
+    case ESP_RST_POWERON:  return "power-on";
+    case ESP_RST_SW:       return "software";
+    case ESP_RST_PANIC:    return "crash";
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT:      return "watchdog";
+    case ESP_RST_BROWNOUT: return "brownout (supply voltage dropped)";
+    case ESP_RST_USB:      return "USB";
+    case ESP_RST_EXT:      return "external pin";
+    default:               return "other";
+    }
 }
 
 /* Called by the screen module right before it lights up again. */
@@ -95,6 +140,22 @@ static void on_screen_wake(void)
 
 void app_main(void)
 {
+    ESP_LOGI(TAG, "reset reason: %s", reset_reason_name(esp_reset_reason()));
+
+    /* Check the battery before lighting the display: on a nearly flat battery, switch
+       straight off instead of browning out in a reset loop. */
+    if (battery_init() != ESP_OK) {
+        ESP_LOGW(TAG, "battery monitor unavailable");
+    } else {
+        battery_info_t b = battery_read();
+        if (battery_is_critical(&b)) {
+            ESP_LOGW(TAG, "battery critical at boot (%d%%, %u mV)", b.percent, b.millivolts);
+            vTaskDelay(pdMS_TO_TICKS(100)); /* let the log get out */
+            battery_power_off();
+            vTaskDelay(portMAX_DELAY);
+        }
+    }
+
     setenv("TZ", CONFIG_WATCH_TIMEZONE, 1);
     tzset();
     seed_time();
@@ -110,10 +171,6 @@ void app_main(void)
     ESP_LOGI(TAG, "internal DMA RAM: %u free, largest block %u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
-
-    if (battery_init() != ESP_OK) {
-        ESP_LOGW(TAG, "battery monitor unavailable");
-    }
 
     bsp_display_lock(0);
     face_create();

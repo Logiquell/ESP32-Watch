@@ -19,3 +19,9 @@ esp_err_t battery_init(void);
 
 /* Read the current battery state (one short I2C transaction burst). */
 battery_info_t battery_read(void);
+
+/* True when running on battery (no USB) and it's critically low. */
+bool battery_is_critical(const battery_info_t *b);
+
+/* Ask the AXP2101 to switch the whole watch off. Press PWR or plug in USB to turn it back on. */
+void battery_power_off(void);
