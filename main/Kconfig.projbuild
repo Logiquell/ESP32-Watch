@@ -36,10 +36,11 @@ menu "Watch"
         default "pool.ntp.org"
 
     config WATCH_RESYNC_HOURS
-        int "Hours between time syncs"
+        int "Hours between time syncs while charging"
         range 1 168
         default 6
         help
-            Wi-Fi is switched off between syncs to save battery.
+            The watch syncs only while USB is connected (soon after plugging in, then
+            at this interval). On battery Wi-Fi stays off, unless the RTC has no valid time.
 
 endmenu

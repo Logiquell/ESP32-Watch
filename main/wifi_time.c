@@ -12,6 +12,7 @@
 #include "nvs_flash.h"
 #include "esp_timer.h"
 #include "rtc.h"
+#include "battery.h"
 
 #if __has_include("wifi_secrets.h")
 #include "wifi_secrets.h"
@@ -112,32 +113,83 @@ static bool sync_once(void)
     return ok;
 }
 
-static void sync_task(void *arg)
+/*
+ * When to sync: the RTC keeps time well for a day or more, and the watch is charged daily,
+ * so Wi-Fi only runs while USB is connected: once soon after plugging in, then every
+ * CONFIG_WATCH_RESYNC_HOURS while it stays plugged in. On battery the radio stays off,
+ * unless the watch has no valid time at all (RTC lost power), then it retries every 30 min.
+ */
+#define CHECK_INTERVAL_MS        (60 * 1000)
+#define RETRY_ON_BATTERY_MS      (30 * 60 * 1000)
+
+static bool s_time_known;
+
+static void handle_sync_result(bool ok)
 {
-    for (;;) {
-        if (sync_once()) {
-            s_last_sync = time(NULL);
-            s_state = WIFI_TIME_SYNCED;
-            struct tm tm;
-            char buf[32];
-            localtime_r((const time_t *)&s_last_sync, &tm);
-            strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
-            ESP_LOGI(TAG, "time synced: %s (%s)", buf, CONFIG_WATCH_TIMEZONE);
-            if (ext_rtc_write(s_last_sync) == ESP_OK) {
-                ESP_LOGI(TAG, "saved to RTC");
-            } else {
-                ESP_LOGW(TAG, "could not save time to RTC");
-            }
-            vTaskDelay(ms_to_ticks(RESYNC_INTERVAL_MS));
-        } else {
-            s_state = WIFI_TIME_FAILED;
-            vTaskDelay(ms_to_ticks(RETRY_INTERVAL_MS));
-        }
+    if (!ok) {
+        s_state = WIFI_TIME_FAILED;
+        return;
+    }
+    s_last_sync = time(NULL);
+    s_time_known = true;
+    s_state = WIFI_TIME_SYNCED;
+    struct tm tm;
+    char buf[32];
+    localtime_r((const time_t *)&s_last_sync, &tm);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+    ESP_LOGI(TAG, "time synced: %s (%s)", buf, CONFIG_WATCH_TIMEZONE);
+    if (ext_rtc_write(s_last_sync) == ESP_OK) {
+        ESP_LOGI(TAG, "saved to RTC");
+    } else {
+        ESP_LOGW(TAG, "could not save time to RTC");
     }
 }
 
-void wifi_time_start(void)
+static void sync_task(void *arg)
 {
+    bool was_on_usb = false;
+    bool synced_this_charge = false;
+    int64_t last_attempt_us = 0;
+    bool attempted = false;
+
+    for (;;) {
+        battery_info_t b = battery_read();
+        bool on_usb = b.valid && b.usb_power;
+        if (on_usb && !was_on_usb) {
+            synced_this_charge = false; /* just plugged in: sync once soon */
+        }
+        was_on_usb = on_usb;
+
+        int64_t since_attempt_ms = attempted ? (esp_timer_get_time() - last_attempt_us) / 1000 : INT64_MAX;
+        bool last_failed = s_state == WIFI_TIME_FAILED;
+        bool due;
+        if (on_usb) {
+            due = !synced_this_charge
+                      ? (!attempted || !last_failed || since_attempt_ms >= RETRY_INTERVAL_MS)
+                      : since_attempt_ms >= RESYNC_INTERVAL_MS;
+        } else {
+            due = !s_time_known && since_attempt_ms >= RETRY_ON_BATTERY_MS;
+        }
+
+        if (due) {
+            attempted = true;
+            last_attempt_us = esp_timer_get_time();
+            bool ok = sync_once();
+            handle_sync_result(ok);
+            if (ok && on_usb) {
+                synced_this_charge = true;
+            }
+        } else if (s_state == WIFI_TIME_SYNCED && !on_usb) {
+            s_state = WIFI_TIME_IDLE; /* not syncing on battery */
+        }
+        vTaskDelay(ms_to_ticks(CHECK_INTERVAL_MS));
+    }
+}
+
+void wifi_time_start(bool time_known)
+{
+    s_time_known = time_known;
+
     esp_err_t err = nvs_flash_init(); /* Wi-Fi driver keeps calibration data in NVS */
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -173,8 +225,9 @@ void wifi_time_start(void)
 
 #else /* !HAVE_WIFI_SECRETS */
 
-void wifi_time_start(void)
+void wifi_time_start(bool time_known)
 {
+    (void)time_known;
     ESP_LOGW(TAG, "main/wifi_secrets.h not found: Wi-Fi time sync disabled. "
                   "Copy main/wifi_secrets.example.h to main/wifi_secrets.h and fill it in.");
     s_state = WIFI_TIME_NO_CONFIG;

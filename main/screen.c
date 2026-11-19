@@ -3,6 +3,11 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_pm.h"
+#include "esp_timer.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_ops.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "lvgl.h"
 #include "bsp/esp-bsp.h"
 #include "bsp/display.h"
@@ -24,26 +29,89 @@ static void (*s_on_wake)(void);
 static lv_anim_t s_fade;
 static int s_fade_var; /* lv_anim needs a non-NULL target */
 
-/* Power management: while the screen is on we hold both locks (full speed, no light sleep).
-   While it's dark we release them, so the CPU drops to 40 MHz and light-sleeps between timers. */
-static esp_pm_lock_handle_t s_lock_cpu;
+/* Power management: while the screen is on we block light sleep; while it's dark we allow it.
+   CPU speed is left to ESP-IDF: it runs at 240 MHz whenever a task is busy (drawing, flip
+   animation) and drops to 40 MHz when idle. (Holding 240 MHz for the whole time the screen
+   was on made screen-on time the biggest battery cost.) */
 static esp_pm_lock_handle_t s_lock_nosleep;
 static uint32_t s_refr_period_awake;
 static uint32_t s_touch_period_awake;
 
 bool screen_is_awake(void) { return s_awake; }
 
+/* ---- AMOLED panel sleep -------------------------------------------------------------
+ * Brightness 0 only darkens the pixels; the panel's driver chip keeps running and draws
+ * real current. While the screen is off we send DISPLAY OFF + SLEEP IN, and SLEEP OUT +
+ * DISPLAY ON before lighting it again. The panel keeps its frame memory while asleep.
+ *
+ * The BSP doesn't expose the panel handles, but esp_lvgl_port stores them at the start of
+ * the display's driver data. We mirror just those leading fields (esp_lvgl_port 2.x,
+ * src/lvgl9/esp_lvgl_port_disp.c, lvgl_port_display_ctx_t).
+ */
+typedef struct {
+    int disp_type;                      /* lvgl_port_disp_type_t */
+    esp_lcd_panel_io_handle_t io_handle;
+    esp_lcd_panel_handle_t panel_handle;
+} port_disp_head_t;
+
+#define LCD_OPCODE_WRITE_CMD 0x02       /* QSPI framing used by the SH8601/CO5300 driver */
+#define LCD_CMD_SLPIN_       0x10
+#define LCD_CMD_SLPOUT_      0x11
+#define SLEEP_SETTLE_MS      120        /* panel needs 120 ms after SLEEP IN/OUT */
+
+static esp_lcd_panel_io_handle_t s_panel_io;
+static esp_lcd_panel_handle_t s_panel;
+static int64_t s_panel_slept_at_us;
+static bool s_panel_asleep;
+
+static void panel_handles_init(void)
+{
+    lv_display_t *disp = lv_display_get_default();
+    const port_disp_head_t *h = disp ? lv_display_get_driver_data(disp) : NULL;
+    if (h && h->disp_type >= 0 && h->disp_type < 8 && h->io_handle && h->panel_handle) {
+        s_panel_io = h->io_handle;
+        s_panel = h->panel_handle;
+    } else {
+        ESP_LOGW(TAG, "panel handles not found: panel will not be put to sleep");
+    }
+}
+
+static void panel_cmd(uint8_t cmd)
+{
+    esp_lcd_panel_io_tx_param(s_panel_io, (LCD_OPCODE_WRITE_CMD << 24) | (cmd << 8), NULL, 0);
+}
+
+static void panel_sleep(bool sleep)
+{
+    if (!s_panel_io || sleep == s_panel_asleep) {
+        return;
+    }
+    if (sleep) {
+        esp_lcd_panel_disp_on_off(s_panel, false);
+        panel_cmd(LCD_CMD_SLPIN_);
+        s_panel_slept_at_us = esp_timer_get_time();
+    } else {
+        /* SLEEP OUT must not follow SLEEP IN too closely */
+        int64_t since_ms = (esp_timer_get_time() - s_panel_slept_at_us) / 1000;
+        if (since_ms < SLEEP_SETTLE_MS) {
+            vTaskDelay(pdMS_TO_TICKS(SLEEP_SETTLE_MS - since_ms));
+        }
+        panel_cmd(LCD_CMD_SLPOUT_);
+        vTaskDelay(pdMS_TO_TICKS(SLEEP_SETTLE_MS));
+        esp_lcd_panel_disp_on_off(s_panel, true);
+    }
+    s_panel_asleep = sleep;
+}
+
 static void pm_locks(bool hold)
 {
-    if (!s_lock_cpu) {
+    if (!s_lock_nosleep) {
         return; /* power management not available */
     }
     if (hold) {
-        esp_pm_lock_acquire(s_lock_cpu);
         esp_pm_lock_acquire(s_lock_nosleep);
     } else {
         esp_pm_lock_release(s_lock_nosleep);
-        esp_pm_lock_release(s_lock_cpu);
     }
 }
 
@@ -71,6 +139,7 @@ static void fade_out_done(lv_anim_t *a)
 {
     (void)a;
     if (!s_awake) {
+        panel_sleep(true);
         lvgl_timers_dark(true);
         pm_locks(false);
     }
@@ -108,6 +177,7 @@ static void wake_up(void)
     if (was_dark) {
         pm_locks(true);
         lvgl_timers_dark(false);
+        panel_sleep(false);
     }
     ESP_LOGI(TAG, "wake");
     lv_display_trigger_activity(NULL); /* restart the idle countdown */
@@ -170,7 +240,6 @@ static void pm_init(void)
         gpio_sleep_sel_dis(keep[i]);
     }
 
-    esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "screen_cpu", &s_lock_cpu);
     esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "screen_on", &s_lock_nosleep);
     pm_locks(true); /* screen starts on */
     ESP_LOGI(TAG, "light sleep enabled while screen is off");
@@ -193,6 +262,7 @@ void screen_init(void (*on_wake)(void))
     s_touch_period_awake = LV_DEF_REFR_PERIOD;
 
     pm_init();
+    panel_handles_init();
 
     bsp_display_brightness_set(CONFIG_WATCH_BRIGHTNESS);
     lv_timer_create(poll, POLL_MS, NULL);

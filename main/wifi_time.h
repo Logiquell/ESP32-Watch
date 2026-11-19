@@ -14,11 +14,12 @@ typedef enum {
 } wifi_time_state_t;
 
 /*
- * Starts a background task that, on a schedule, turns Wi-Fi on, syncs the
- * clock over NTP, then turns Wi-Fi off again to save battery.
+ * Starts a background task that syncs the clock over NTP, turning Wi-Fi on only for the
+ * sync. It syncs only while USB is connected (soon after plugging in, then every
+ * CONFIG_WATCH_RESYNC_HOURS), or on battery if time_known is false (RTC had no valid time).
  * Requires nothing else to have initialised NVS / netif / the event loop.
  */
-void wifi_time_start(void);
+void wifi_time_start(bool time_known);
 
 wifi_time_state_t wifi_time_state(void);
 

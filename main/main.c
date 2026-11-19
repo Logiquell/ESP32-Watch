@@ -61,8 +61,9 @@ static void seed_time_from_build(void)
     settimeofday(&tv, NULL);
 }
 
-/* Set the system clock at boot: the RTC if it holds a valid time, else the build time. */
-static void seed_time(void)
+/* Set the system clock at boot: the RTC if it holds a valid time, else the build time.
+   Returns true if the time came from the RTC (i.e. it's trustworthy). */
+static bool seed_time(void)
 {
     time_t t;
     if (ext_rtc_init() == ESP_OK && ext_rtc_read(&t) == ESP_OK) {
@@ -73,10 +74,11 @@ static void seed_time(void)
         localtime_r(&t, &tm);
         strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
         ESP_LOGI(TAG, "time from RTC: %s", buf);
-    } else {
-        seed_time_from_build();
-        ESP_LOGI(TAG, "RTC time not available, using build time until Wi-Fi sync");
+        return true;
     }
+    seed_time_from_build();
+    ESP_LOGI(TAG, "RTC time not available, using build time until Wi-Fi sync");
+    return false;
 }
 
 /* Runs inside the LVGL task every 250 ms, so the display lock is already held. */
@@ -309,7 +311,7 @@ void app_main(void)
 
     setenv("TZ", CONFIG_WATCH_TIMEZONE, 1);
     tzset();
-    seed_time();
+    bool time_known = seed_time();
 
     /*
      * The BSP's LVGL draw buffer lives in PSRAM, so the SPI driver copies each flush into
@@ -335,5 +337,5 @@ void app_main(void)
 
     ESP_LOGI(TAG, "watch face running");
 
-    wifi_time_start();
+    wifi_time_start(time_known);
 }
