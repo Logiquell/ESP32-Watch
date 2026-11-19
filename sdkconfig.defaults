@@ -22,6 +22,8 @@ CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_PM_ENABLE=y
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
 CONFIG_USJ_NO_AUTO_LS_ON_CONNECTION=y
+# Record time spent in each power mode (printed with the diag log every 60 s)
+CONFIG_PM_PROFILING=y
 # Note: tickless idle forces PM_SLP_DISABLE_GPIO on ESP32-S3 (chip errata workaround);
 # screen.c exempts the LCD/touch control pins with gpio_sleep_sel_dis().
 

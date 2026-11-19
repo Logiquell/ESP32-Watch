@@ -10,6 +10,7 @@
 #include "esp_netif_sntp.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
+#include "esp_timer.h"
 #include "rtc.h"
 
 #if __has_include("wifi_secrets.h")
@@ -28,13 +29,25 @@ static const char *TAG = "wifi_time";
 
 #define BIT_GOT_IP BIT0
 
+/*
+ * Long delays must not go through pdMS_TO_TICKS: it multiplies in 32 bits, so 6 h
+ * (21,600,000 ms x 1000 Hz) wrapped around to ~125 s and Wi-Fi synced every 2 minutes,
+ * draining the battery. Convert in 64 bits instead.
+ */
+static TickType_t ms_to_ticks(uint32_t ms)
+{
+    return (TickType_t)(((uint64_t)ms * configTICK_RATE_HZ) / 1000U);
+}
+
 static EventGroupHandle_t s_events;
 static volatile wifi_time_state_t s_state = WIFI_TIME_NO_CONFIG;
 static volatile time_t s_last_sync;
 static volatile bool s_want_connection;
+static wifi_time_stats_t s_stats;
 
 wifi_time_state_t wifi_time_state(void) { return s_state; }
 time_t wifi_time_last_sync(void) { return s_last_sync; }
+wifi_time_stats_t wifi_time_stats(void) { return s_stats; }
 
 #if HAVE_WIFI_SECRETS
 
@@ -52,6 +65,9 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
             ESP_LOGW(TAG, "disconnected, reason %d", ev->reason);
             last_reason = ev->reason;
         }
+        if (s_want_connection) {
+            s_stats.last_disconnect_reason = ev->reason;
+        }
         xEventGroupClearBits(s_events, BIT_GOT_IP);
         if (s_want_connection) {
             esp_wifi_connect(); /* keep trying until the sync task gives up */
@@ -67,6 +83,8 @@ static bool sync_once(void)
 {
     s_state = WIFI_TIME_CONNECTING;
     s_want_connection = true;
+    s_stats.attempts++;
+    int64_t radio_on_us = esp_timer_get_time();
     ESP_ERROR_CHECK(esp_wifi_start());
 
     EventBits_t bits = xEventGroupWaitBits(s_events, BIT_GOT_IP, pdFALSE, pdTRUE,
@@ -87,6 +105,10 @@ static bool sync_once(void)
     s_want_connection = false;
     esp_wifi_stop(); /* radio off between syncs: big battery saving */
     xEventGroupClearBits(s_events, BIT_GOT_IP);
+    s_stats.radio_on_ms += (uint32_t)((esp_timer_get_time() - radio_on_us) / 1000);
+    if (!ok) {
+        s_stats.failures++;
+    }
     return ok;
 }
 
@@ -106,10 +128,10 @@ static void sync_task(void *arg)
             } else {
                 ESP_LOGW(TAG, "could not save time to RTC");
             }
-            vTaskDelay(pdMS_TO_TICKS(RESYNC_INTERVAL_MS));
+            vTaskDelay(ms_to_ticks(RESYNC_INTERVAL_MS));
         } else {
             s_state = WIFI_TIME_FAILED;
-            vTaskDelay(pdMS_TO_TICKS(RETRY_INTERVAL_MS));
+            vTaskDelay(ms_to_ticks(RETRY_INTERVAL_MS));
         }
     }
 }

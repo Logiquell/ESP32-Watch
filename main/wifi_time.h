@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <time.h>
 
 typedef enum {
@@ -23,3 +24,12 @@ wifi_time_state_t wifi_time_state(void);
 
 /* Unix time of the last successful sync, or 0 if never synced. */
 time_t wifi_time_last_sync(void);
+
+typedef struct {
+    uint32_t attempts;
+    uint32_t failures;
+    uint32_t radio_on_ms;            /* total time the Wi-Fi radio was on */
+    uint8_t  last_disconnect_reason; /* Wi-Fi driver reason code, 0 = none */
+} wifi_time_stats_t;
+
+wifi_time_stats_t wifi_time_stats(void);
