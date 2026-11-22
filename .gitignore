@@ -8,3 +8,16 @@ sdkconfig.old
 dependencies.lock.bak
 .vscode/
 *.swp
+
+# Editors / OS
+.idea/
+.DS_Store
+Thumbs.db
+
+# Python / tooling caches
+__pycache__/
+*.pyc
+
+# Local logs and crash dumps pulled from the device
+*.log
+coredump*.elf
