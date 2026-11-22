@@ -67,6 +67,7 @@ This summarises the Git history (16 commits, 17–19 Nov 2026) and the tests rec
   - **CPU:** the `CPU_FREQ_MAX` lock was removed, so DFS raises the frequency only while there is work.
   - **Wi-Fi only while charging:** the watch is charged daily and the RTC holds time between charges.
 - **Result:** 100 % → 87 % over 236 min, untouched. That is ≈ 3.3 %/h, with light sleep 97 % of the time, 208,254 light-sleep entries and 0 rejected.
+- **Follow-up (user observation, 22 Nov):** with normal wear, the watch was at 10 % at 11:00, about 2 days after being unplugged. That is ≈ 1.5–1.9 %/h, assuming it started at 100 %. So the 4-hour figure overstated the long-run drain, probably because the gauge drops faster near full charge. The exact start %, end % and duration are recorded on the device but have not been read out yet.
 
 ## Design decisions and trade-offs
 
@@ -93,7 +94,7 @@ This summarises the Git history (16 commits, 17–19 Nov 2026) and the tests rec
 
 ## Known limitations
 
-- **Battery figures use the AXP2101 fuel gauge:** 1 % resolution, possibly non-linear near full charge, and every run so far started at 100 %. They are single runs, not averages. No direct current measurement has been made. Battery life (~30 h) is extrapolated, not measured.
+- **Battery figures use the AXP2101 fuel gauge:** 1 % resolution, possibly non-linear near full charge, and every run so far started at 100 %. They are single runs, not averages. No direct current measurement has been made. Battery life (about 2.5 days with normal use) is estimated from one 2-day observation, not from a full discharge.
 - **USB serial stops responding after light sleep** until the chip is reset. It occasionally needs a PWR power-cycle, which clears the saved diagnostics.
 - **Panel handle access is fragile:** `screen.c` reads the panel handles by mirroring the start of esp_lvgl_port 2.x's internal `lvgl_port_display_ctx_t`. A component update could change that layout. There is a sanity check that disables panel sleep if the handles look wrong.
 - **The low-battery power-off path is not yet exercised** by running the battery down to the threshold.

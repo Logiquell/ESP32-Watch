@@ -137,8 +137,9 @@ Measured on hardware (single runs, AXP2101 fuel gauge with 1 % resolution):
 | Before 9a10a08 | on battery | ~10–12 %/h | commit 9a10a08 |
 | 9a10a08 | on battery | ~8 %/h, light sleep 88 % of the time, 1 Wi-Fi sync | commit 9a10a08 |
 | 1f6996b | on battery, not touched | 100 % → 87 % in 236 min (≈ 3.3 %/h), light sleep 97 %, 208,254 light-sleep entries, 0 rejected, 0 Wi-Fi syncs on battery | boot-log diagnostics, commit 1f6996b |
+| 1f6996b | on battery, normal wear, ~2 days | 10 % remaining at 11:00 on 22 Nov after being unplugged about 2 days earlier (≈ 1.5–1.9 %/h if it started at 100 %) | user observation; the device-recorded figures have not been read out yet |
 
-At 3.3 %/h, a full charge would last about 30 h. That figure is extrapolated: a full discharge has not been measured. The battery current has not been measured directly. All figures come from the PMU's fuel gauge.
+The 2-day run suggests about 2.5 days per charge with normal use. The 4-hour test probably overstated the drain, because the fuel gauge tends to drop faster in the first hours off a full charge. A full discharge to the low-battery shutdown has not been measured. The battery current has not been measured directly. All figures come from the PMU's fuel gauge.
 
 Verified on hardware (recorded in commit messages):
 - NTP sync about 3 s after boot.
